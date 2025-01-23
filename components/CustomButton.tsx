@@ -6,6 +6,7 @@ interface CustomButtonProps {
   title: string;
   textStyles?: string; // Accept Tailwind class strings for text styling
   containerStyles?: string; // Accept Tailwind class strings for container styling
+  disabled?: boolean | undefined
 }
 
 const CustomButton = ({
@@ -13,12 +14,14 @@ const CustomButton = ({
   title = '', // Default to empty string
   textStyles = '',
   containerStyles = '',
+  disabled
 }: CustomButtonProps) => {
   return (
     <TouchableOpacity
+      disabled={disabled}
       activeOpacity={0.7}
       onPress={onPress}
-      className={`rounded-xl max-h-10 justify-center items-center ${containerStyles}`}
+      className={`justify-center items-center rounded-md ${containerStyles}`}
     >
       {title ? ( // Render Text only if `title` is valid
         <Text className={`text-black font-regular text-lg ${textStyles}`}>{title}</Text>

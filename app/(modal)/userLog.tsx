@@ -1,7 +1,6 @@
 import { View, Text, Pressable, Animated } from "react-native";
 import React, { useState, useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import AppGradient from "@/components/AppGradient";
 import Feather from "@expo/vector-icons/Feather";
 import CustomButton from "@/components/CustomButton";
 import { router } from "expo-router";
@@ -79,7 +78,7 @@ const UserLog = () => {
             setLogInDetails={setLogInDetails}
           />
         ) : (
-          <RegisterBox 
+          <RegisterBox
             email={registerDetails.email}
             username={registerDetails.username}
             password={registerDetails.password}

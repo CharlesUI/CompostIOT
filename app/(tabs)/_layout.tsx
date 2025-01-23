@@ -27,6 +27,22 @@ const TabsLayout = () => {
         }}
       />
       <Tabs.Screen
+        name="Device"
+        options={{
+          title: "Device",
+          tabBarLabel: "Device",
+          tabBarIcon: ({ color }) => {
+            return (
+              <MaterialCommunityIcons
+                name="flower-tulip"
+                size={24}
+                color={color}
+              />
+            );
+          },
+        }}
+      />
+      <Tabs.Screen
         name="Manual"
         options={{
           title: "Manual",
