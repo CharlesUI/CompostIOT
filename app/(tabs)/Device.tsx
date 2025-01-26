@@ -1,71 +1,142 @@
 import React, { useEffect, useState } from "react";
 import HeaderSection from "@/components/HeaderSection";
 import { MaterialIcons } from "@expo/vector-icons";
-import { View, Text } from "react-native";
+import { View, Text, ActivityIndicator } from "react-native";
 import CustomButton from "@/components/CustomButton";
 import { LineChart } from "react-native-gifted-charts";
 
-// Generate mock data
-const generateMockData = (timePeriod: string) => {
-  switch (timePeriod) {
-    case "Day":
-      // Generate data for a single day (24 hours)
-      return Array.from({ length: 24 }, (_, i) => ({
-        label: `${i}:00`,
-        value: Math.random() * 100, // Random watt value
-      }));
-    case "Week":
-      // Generate data for a week (7 days)
-      return Array.from({ length: 7 }, (_, i) => ({
-        label: `Day ${i + 1}`,
-        value: Math.random() * 100, // Random watt value
-      }));
-    case "Month":
-      // Generate data for a month (12 months)
-      return Array.from({ length: 12 }, (_, i) => ({
-        label: `Month ${i + 1}`,
-        value: Math.random() * 100, // Random watt value
-      }));
-    default:
-      return [];
-  }
+// Generate mock data for energy
+const generateMockData = (timePeriod: string, dataType: string) => {
+  let maxValue = 100; // Default maximum value for wattage
+  if (dataType === "voltage") maxValue = 20;
+  if (dataType === "current") maxValue = 5;
+
+  const dataLength = timePeriod === "Day" ? 24 : timePeriod === "Week" ? 7 : 12;
+
+  return Array.from({ length: dataLength }, (_, i) => ({
+    label:
+      timePeriod === "Day"
+        ? `${i}:00`
+        : timePeriod === "Week"
+        ? `Day ${i + 1}`
+        : `Month ${i + 1}`,
+    value: parseFloat((Math.random() * maxValue).toFixed(2)), // Random value within range
+    timeStamp: new Date(), // Mock timestamp
+  }));
+};
+
+// Generate mock data for compost
+const generateCompostData = (timePeriod: string, dataType: string) => {
+  let maxValue = 100; // Default maximum value for temperature
+  if (dataType === "methane") maxValue = 50;
+  if (dataType === "moisture") maxValue = 80;
+
+  const dataLength = timePeriod === "Day" ? 24 : timePeriod === "Week" ? 7 : 12;
+
+  return Array.from({ length: dataLength }, (_, i) => ({
+    label:
+      timePeriod === "Day"
+        ? `${i}:00`
+        : timePeriod === "Week"
+        ? `Day ${i + 1}`
+        : `Month ${i + 1}`,
+    value: parseFloat((Math.random() * maxValue).toFixed(2)), // Random value within range
+    timeStamp: new Date(), // Mock timestamp
+  }));
 };
 
 const Device = () => {
   const [isDeviceEnergySelected, setDeviceEnergySelected] = useState(false);
   const [isDeviceCompostSelected, setDeviceCompostSelected] = useState(false);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>("Day");
   const [chartData, setChartData] = useState<any[]>([]);
+  const [selectedParameter, setSelectedParameter] = useState("voltage");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  console.log("Device", isDeviceEnergySelected);
+  console.log("Compost", isDeviceCompostSelected);
+  console.log(selectedTime);
+  console.log(selectedParameter);
+  console.log(chartData);
 
   const handleDeviceEnergyClick = () => {
     if (isDeviceCompostSelected) {
       setDeviceCompostSelected(false);
+      setSelectedTime("Day");
     }
     setDeviceEnergySelected(!isDeviceEnergySelected);
+    setSelectedParameter("voltage"); // Default to voltage when energy is selected
   };
 
   const handleDeviceCompostClick = () => {
     if (isDeviceEnergySelected) {
       setDeviceEnergySelected(false);
+      setSelectedTime("Day");
     }
     setDeviceCompostSelected(!isDeviceCompostSelected);
+    setSelectedParameter("methane"); // Default to methane when compost is selected
   };
 
   const handleTimeClick = (time: string) => {
-    if (isDeviceEnergySelected || isDeviceCompostSelected) {
-      setSelectedTime(time);
-      setChartData([]); // Clear current data to restart the chart
-      setTimeout(() => {
-        setChartData(generateMockData(time)); // Update chart data after clearing
-      }, 300); // Add a small delay to allow the chart to clear first
+    setSelectedTime(time);
+    setChartData([]); // Clear current data to restart the chart
+    setIsLoading(true);
+    setTimeout(() => {
+      if (isDeviceEnergySelected) {
+        setChartData(generateMockData(time, selectedParameter));
+      } else if (isDeviceCompostSelected) {
+        setChartData(generateCompostData(time, selectedParameter));
+      }
+      setIsLoading(false);
+    }, 300); // Add a small delay to allow the chart to clear first
+  };
+
+  const handleParameterChange = (parameter: string) => {
+    setSelectedParameter(parameter);
+    setIsLoading(true);
+    if (isDeviceEnergySelected && selectedTime) {
+      setChartData(generateMockData(selectedTime, parameter));
+    } else if (isDeviceCompostSelected && selectedTime) {
+      setChartData(generateCompostData(selectedTime, parameter));
     }
+    setIsLoading(false);
   };
 
   useEffect(() => {
     if (selectedTime) {
-      setChartData(generateMockData(selectedTime)); // Initial chart data load
+      if (isDeviceEnergySelected) {
+        setChartData(generateMockData(selectedTime, selectedParameter)); // Initial energy data load
+      } else if (isDeviceCompostSelected) {
+        setChartData(generateCompostData(selectedTime, selectedParameter)); // Initial compost data load
+      }
     }
-  }, [selectedTime]);
+  }, [
+    selectedTime,
+    selectedParameter,
+    isDeviceCompostSelected,
+    isDeviceEnergySelected,
+  ]);
+
+  // Set dynamic chart labels and max value based on selected parameter
+  const getYAxisLabelSuffix = () => {
+    if (selectedParameter === "voltage") return "V";
+    if (selectedParameter === "current") return "A";
+    if (selectedParameter === "wattage") return "W";
+    if (selectedParameter === "methane") return "ppm";
+    if (selectedParameter === "moisture") return "%";
+    if (selectedParameter === "temperature") return "°C";
+    return ""; // Default case
+  };
+
+  const getMaxValue = () => {
+    if (selectedParameter === "voltage") return 20;
+    if (selectedParameter === "current") return 5;
+    if (selectedParameter === "wattage") return 100;
+    if (selectedParameter === "methane") return 50;
+    if (selectedParameter === "moisture") return 80;
+    if (selectedParameter === "temperature") return 100;
+    return 100; // Default max value
+  };
 
   return (
     <View className="flex-1">
@@ -127,46 +198,73 @@ const Device = () => {
             />
           ))}
         </View>
-      </View>
 
-      <View className="w-full p-5 flex-col">
-        {selectedTime && chartData.length > 0 && (
-          <View>
-            <Text className=" font-bold mb-4">Device Data:</Text>
-            <LineChart
-              data={chartData}
-              isAnimated
-              thickness={3}
-              color="#07BAD1"
-              maxValue={100}
-              noOfSections={4}
-              xAxisLabelsHeight={50}
-              height={250}
-              yAxisLabelSuffix="W"
-              animateOnDataChange
-              animationDuration={1000}
-              onDataChangeAnimationDuration={300}
-              areaChart
-              curved
-              yAxisTextStyle={{ color: "black", fontSize: 8 }}
-              yAxisThickness={0}
-              xAxisThickness={2} // Increased thickness for the X-axis
-              xAxisLabelTextStyle={{
-                color: "black",
-                fontSize: 8,
-                fontWeight: "bold",
-              }}
-              rotateLabel
-              hideDataPoints
-              startFillColor={"rgb(84,219,234)"}
-              endFillColor={"rgb(84,219,234)"}
-              startOpacity={0.4}
-              endOpacity={0.1}
-              backgroundColor="transparent"
-              rulesColor="gray"
-            />
-          </View>
-        )}
+        {/* Line Chart with Parameter Selection for Energy and Compost*/}
+        <View className="w-full p-5 flex-col">
+          {selectedTime && chartData.length > 0 && !isLoading && (
+            <View>
+              <View>
+                <Text className=" font-bold mb-4">Device Data:</Text>
+                <LineChart
+                  data={chartData}
+                  isAnimated
+                  thickness={3}
+                  color="#07BAD1"
+                  maxValue={getMaxValue()}
+                  noOfSections={4}
+                  xAxisLabelsHeight={50}
+                  height={250}
+                  yAxisLabelSuffix={getYAxisLabelSuffix()}
+                  animateOnDataChange
+                  animationDuration={1000}
+                  onDataChangeAnimationDuration={300}
+                  areaChart
+                  curved
+                  yAxisTextStyle={{ color: "black", fontSize: 8 }}
+                  yAxisThickness={0}
+                  xAxisThickness={0}
+                  xAxisLabelTextStyle={{
+                    color: "black",
+                    fontSize: 8,
+                    fontWeight: "bold",
+                  }}
+                  rotateLabel
+                  hideDataPoints
+                  startFillColor={"rgb(84,219,234)"}
+                  endFillColor={"rgb(84,219,234)"}
+                  startOpacity={0.4}
+                  endOpacity={0.1}
+                  backgroundColor="transparent"
+                  rulesColor="gray"
+                />
+              </View>
+              {/* Parameter Selection for Energy and Compost */}
+              {(isDeviceEnergySelected || isDeviceCompostSelected) && (
+                <View className="w-full justify-center items-center">
+                  <View className="w-[92.5%] py-3 flex-row flex justify-between items-center">
+                    {(isDeviceEnergySelected
+                      ? ["voltage", "current", "wattage"]
+                      : ["methane", "moisture", "temp"]
+                    ).map((param) => (
+                      <CustomButton
+                        key={param}
+                        onPress={() => handleParameterChange(param)}
+                        title={param.charAt(0).toUpperCase() + param.slice(1)}
+                        textStyles="text-[6px] font-semibold"
+                        containerStyles={`w-1/4 align-center border-[0.5px] ${
+                          selectedParameter === param
+                            ? "border-green-600 bg-green-100"
+                            : "border-gray-400"
+                        }`}
+                      />
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+        {isLoading && <ActivityIndicator color={"#DE0F3F"} size={"large"} />}
       </View>
     </View>
   );
