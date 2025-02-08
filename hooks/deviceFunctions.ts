@@ -1,4 +1,6 @@
 // Set dynamic chart labels and max value based on selected parameter
+
+import { View, Text } from "react-native";
 export const getYAxisLabelSuffix = (selectedParameter: string) => {
   if (selectedParameter === "voltage") return "V";
   if (selectedParameter === "current") return "A";
@@ -18,3 +20,7 @@ export const getMaxValue = (selectedParameter: string) => {
   if (selectedParameter === "temperature") return 100;
   return 100; // Default max value
 };
+
+
+
+

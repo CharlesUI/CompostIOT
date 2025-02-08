@@ -5,6 +5,7 @@ module.exports = {
     "./App.{js,jsx,ts,tsx}",
     "./app/**/*.{js,jsx,ts,tsx}", // Include all JS, JSX, TS, and TSX files in the app folder
     "./components/**/*.{js,jsx,ts,tsx}", // Include all JS, JSX, TS, and TSX files in the components folder]
+    "./hooks/**/*.{js,jsx,ts,tsx}", // Include all JS, JSX, TS, and TSX files in the Hooks folder]
     "./app/(tabs)/meditate.tsx",
     "./app/(tabs)/**/*.{js,jsx,ts,tsx}",
   ],
