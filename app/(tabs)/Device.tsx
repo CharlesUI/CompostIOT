@@ -3,225 +3,318 @@ import HeaderSection from "@/components/HeaderSection";
 import { MaterialIcons } from "@expo/vector-icons";
 import { View, Text, ActivityIndicator, ScrollView } from "react-native";
 import CustomButton from "@/components/CustomButton";
-import { LineChart } from "react-native-gifted-charts";
 import { getYAxisLabelSuffix, getMaxValue } from "@/hooks/deviceFunctions";
-import { useGenerateReading } from "@/hooks/useGenerateReading";
+import RealTimeReading from "@/components/RealTimeReading";
+import { RTC } from "@/components/RealTimeReading";
+import LineGraphDataVisual from "@/components/LineGraphDataVisual";
+import {
+  parseISO,
+  differenceInMinutes,
+  isSameDay,
+  format,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  startOfMonth,
+  startOfToday,
+  endOfWeek,
+  endOfMonth,
+} from "date-fns"; // Import date-fns functions
+import { useMemo, useCallback, useRef } from "react";
+import data from "@/assets/data.json";
 
-// Generate mock data for energy
-const generateMockData1 = (timePeriod: string, dataType: string) => {
-  let maxValue = 100; // Default maximum value for wattage
-  if (dataType === "voltage") maxValue = 20;
-  if (dataType === "current") maxValue = 5;
+const { debounce } = require("lodash") // Import debounce from lodash - install if needed: npm install lodash.debounce
+import { TimeDataProp, APIDataProp, EnergyData, CompostData, AllSavedDataProp  } from "@/hooks/APICallTypes";
 
-  const dataLength = timePeriod === "Day" ? 24 : timePeriod === "Week" ? 7 : 12;
-
-  return Array.from({ length: dataLength }, (_, i) => ({
-    label:
-      timePeriod === "Day"
-        ? `${i}:00`
-        : timePeriod === "Week"
-        ? `Day ${i + 1}`
-        : `Month ${i + 1}`,
-    value: parseFloat((Math.random() * maxValue).toFixed(2)), // Random value within range
-    timeStamp: new Date(), // Mock timestamp
-  }));
-};
-const generateMockData2 = (timePeriod: string, dataType: string) => {
-  let maxValue = 100; // Default maximum value for wattage
-  if (dataType === "voltage") maxValue = 20;
-  if (dataType === "current") maxValue = 5;
-
-  const dataLength = timePeriod === "Day" ? 24 : timePeriod === "Week" ? 7 : 12;
-
-  return Array.from({ length: dataLength }, (_, i) => ({
-    label:
-      timePeriod === "Day"
-        ? `${i}:00`
-        : timePeriod === "Week"
-        ? `Day ${i + 1}`
-        : `Month ${i + 1}`,
-    value: parseFloat((Math.random() * maxValue).toFixed(2)), // Random value within range
-    timeStamp: new Date(), // Mock timestamp
-  }));
-};
-
-// Generate mock data for compost
-const generateCompostData1 = (timePeriod: string, dataType: string) => {
-  let maxValue = 100; // Default maximum value for temperature
-  if (dataType === "methane") maxValue = 50;
-  if (dataType === "moisture") maxValue = 80;
-
-  const dataLength = timePeriod === "Day" ? 24 : timePeriod === "Week" ? 7 : 12;
-
-  return Array.from({ length: dataLength }, (_, i) => ({
-    label:
-      timePeriod === "Day"
-        ? `${i}:00`
-        : timePeriod === "Week"
-        ? `Day ${i + 1}`
-        : `Month ${i + 1}`,
-    value: parseFloat((Math.random() * maxValue).toFixed(2)), // Random value within range
-    timeStamp: new Date(), // Mock timestamp
-  }));
-};
-const generateCompostData2 = (timePeriod: string, dataType: string) => {
-  let maxValue = 100; // Default maximum value for temperature
-  if (dataType === "methane") maxValue = 50;
-  if (dataType === "moisture") maxValue = 80;
-
-  const dataLength = timePeriod === "Day" ? 24 : timePeriod === "Week" ? 7 : 12;
-
-  return Array.from({ length: dataLength }, (_, i) => ({
-    label:
-      timePeriod === "Day"
-        ? `${i}:00`
-        : timePeriod === "Week"
-        ? `Day ${i + 1}`
-        : `Month ${i + 1}`,
-    value: parseFloat((Math.random() * maxValue).toFixed(2)), // Random value within range
-    timeStamp: new Date(), // Mock timestamp
-  }));
-};
 
 const Device = () => {
+  const [deviceData, setDeviceData] = useState<APIDataProp | null>(null);
+  const [deviceNumber, setDeviceNumber] = useState<string>();
+  const [realTimeData, setRealTimeData] = useState<RTC>();
+  const [savedTimeFrameData, setSavedTimeFrameData] = useState<any[]>([]);
+  const [allSavedData, setAllSavedData] = useState<AllSavedDataProp>({
+    solar: [],
+    teg: [],
+    compostOne: [],
+    compostTwo: [],
+  });
   const [isDeviceEnergySelected, setDeviceEnergySelected] = useState(true);
   const [isDeviceCompostSelected, setDeviceCompostSelected] = useState(false);
-  const [selectedTime, setSelectedTime] = useState<string | null>("Day");
-  const [chartDataSolar, setChartDataSolar] = useState<any[]>([]);
-  const [chartDataTeg, setChartDataTeg] = useState<any[]>([]);
-  const [chartDataCompost1, setChartDataCompost1] = useState<any[]>([]);
-  const [chartDataCompost2, setChartDataCompost2] = useState<any[]>([]);
-  const [selectedParameter, setSelectedParameter] = useState("voltage");
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [selectedTime, setSelectedTime] = useState<string | undefined>("Day");
+  const [downsampleInterval, setDownsampleInterval] = useState<number>(10); // Default 10 mins for Day
+
+  const [selectedParameter, setSelectedParameter] = useState<
+    string | undefined
+  >("voltage");
   const [selectedReading, setSelectedReading] = useState<string | null>(
     "Battery"
   );
-  const { generateReading } = useGenerateReading(selectedReading);
-  const lengthChecker =
-    chartDataSolar.length > 0 ||
-    chartDataTeg.length > 0 ||
-    (chartDataCompost1.length > 0 && chartDataCompost2.length > 0);
 
-  console.log("Device:", isDeviceEnergySelected);
-  console.log("Compost:", isDeviceCompostSelected);
-  console.log("Time:", selectedTime);
-  console.log("Parameter:", selectedParameter);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [dataProcessed, setDataProcessed] = useState(false); // Track data processing
+
+  // const [chartDataSolar, setChartDataSolar] = useState<any[]>([]);
+  // const [chartDataTeg, setChartDataTeg] = useState<any[]>([]);
+  // const [chartDataCompost1, setChartDataCompost1] = useState<any[]>([]);
+  // const [chartDataCompost2, setChartDataCompost2] = useState<any[]>([]);
+
+  console.log("_________________START___________________");
+  console.log("Device: ", isDeviceEnergySelected);
+  console.log("Compost: ", isDeviceCompostSelected);
+  console.log("Time: ", selectedTime);
+  console.log("Parameter: ", selectedParameter);
   console.log("reading", selectedReading);
-  console.log("Solar length:", chartDataSolar.length > 0);
-  console.log("TEG length:", chartDataTeg.length > 0);
-  console.log("Compost length:", chartDataCompost1.length > 0);
-  console.log("Compost length:", chartDataCompost2.length > 0);
-  console.log("Loading?", isLoading);
-  console.log("____________________________________________");
+  console.log("Loading: ", isLoading);
+  console.log("________________________________________");
+  console.log("Device Number: ", deviceNumber);
+  console.log("RealTimeData Time: ", realTimeData?.timestamp);
+  console.log("saved time", savedTimeFrameData.length);
+  console.log("solar data: ", allSavedData.solar.length);
+  console.log("teg data: ", allSavedData.teg.length);
+  console.log("compost1: ", allSavedData.compostOne);
+  console.log("compost2: ", allSavedData.compostTwo.length);
+  console.log("________________END____________________");
 
-  const handleDeviceEnergyClick = () => {
-    if (isDeviceCompostSelected) {
-      setDeviceCompostSelected(false);
-      setSelectedTime("Day");
-    }
-    setDeviceEnergySelected(!isDeviceEnergySelected);
-    setSelectedParameter("voltage"); // Default to voltage when energy is selected
-  };
 
-  const handleDeviceCompostClick = () => {
-    if (isDeviceEnergySelected) {
-      setDeviceEnergySelected(false);
-      setSelectedTime("Day");
-    }
-    setDeviceCompostSelected(!isDeviceCompostSelected);
-    setSelectedParameter("methane"); // Default to methane when compost is selected
-  };
+  const filterAndFormatAllData = useCallback((data: any[]):  AllSavedDataProp => {
+      const solar: EnergyData[] = [];
+      const teg: EnergyData[] = [];
+      const compostOne: CompostData[] = [];
+      const compostTwo: CompostData[] = [];
 
-  const handleTimeClick = (time: string) => {
-    setSelectedTime(time);
-    setChartDataSolar([]);
-    setChartDataTeg([]);
-    setChartDataCompost1([]); // Ensure compost data is cleared before updating
-    setChartDataCompost2([]); // Ensure compost data is cleared before updating
-    setIsLoading(true);
+      if (!data) {
+        return { solar, teg, compostOne, compostTwo };
+      }
 
-    setTimeout(() => {
-      setChartDataSolar((prev) =>
-        isDeviceEnergySelected
-          ? generateMockData1(time, selectedParameter)
-          : prev
-      );
-      setChartDataTeg((prev) =>
-        isDeviceEnergySelected
-          ? generateMockData2(time, selectedParameter)
-          : prev
-      );
-      setChartDataCompost1((prev) =>
-        isDeviceCompostSelected
-          ? generateCompostData1(time, selectedParameter)
-          : prev
-      );
-      setChartDataCompost2((prev) =>
-        isDeviceCompostSelected
-          ? generateCompostData2(time, selectedParameter)
-          : prev
-      );
-      setIsLoading(false);
-    }, 300);
-  };
+      const downsampledData = downsampleData(data, downsampleInterval);
 
-  const handleParameterChange = (parameter: string) => {
-    setSelectedParameter(parameter);
-    setIsLoading(true);
+      downsampledData.forEach((item: any) => {
+        if (item.solar) {
+          solar.push({
+            timestamp: item.timestamp,
+            ...item.solar,
+          })}
+        if (item.teg) {
+          teg.push({
+            timestamp: item.timestamp,
+            ...item.teg,
+          })}
+        if (item.compostContainerOne) {
+          compostOne.push({
+            timestamp: item.timestamp,
+            ...item.compostContainerOne,
+          })}
+        if (item.compostContainerTwo) {
+          compostTwo.push({
+            timestamp: item.timestamp,
+            ...item.compostContainerTwo,
+          })}
+      });
 
-    setTimeout(() => {
-      setChartDataSolar((prev) =>
-        isDeviceEnergySelected && selectedTime
-          ? generateMockData1(selectedTime, parameter)
-          : prev
-      );
-      setChartDataTeg((prev) =>
-        isDeviceEnergySelected && selectedTime
-          ? generateMockData2(selectedTime, parameter)
-          : prev
-      );
-      setChartDataCompost1((prev) =>
-        isDeviceCompostSelected && selectedTime
-          ? generateCompostData1(selectedTime, parameter)
-          : prev
-      );
-      setChartDataCompost2((prev) =>
-        isDeviceCompostSelected && selectedTime
-          ? generateCompostData2(selectedTime, parameter)
-          : prev
-      );
-      setIsLoading(false);
-    }, 300);
+      return { solar, teg, compostOne, compostTwo };
+  },[downsampleInterval]);
+
+  const downsampleData = (data: any[], intervalMins: number) => {
+    if (!data || data.length === 0) return [];
+
+    const downsampled: any[] = [];
+    let lastTimestamp: Date | null = null;
+
+    data.forEach((item: any) => {
+      const currentTimestamp = parseISO(item.timestamp);
+
+      if (!lastTimestamp) {
+        lastTimestamp = currentTimestamp;
+        downsampled.push(item);
+        return;
+      }
+
+      const timeDiff = differenceInMinutes(currentTimestamp, lastTimestamp);
+
+      if (timeDiff >= intervalMins) {
+        downsampled.push(item);
+        lastTimestamp = currentTimestamp;
+      }
+    });
+
+    return downsampled;
   };
 
   useEffect(() => {
-    if (selectedTime) {
-      if (isDeviceEnergySelected) {
-        setChartDataSolar(generateMockData1(selectedTime, selectedParameter));
-        setChartDataTeg(generateMockData2(selectedTime, selectedParameter));
+    const fetchData = async () => {
+      try {
+        const response: any = await new Promise((resolve) => {
+          setTimeout(() => resolve(data), 500); // Resolve with your data
+        });
+        setDeviceData(response);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setTimeout(() => {
+          setIsLoading(false);
+        }, 1000);
       }
-      if (isDeviceCompostSelected) {
-        setChartDataCompost1(
-          generateCompostData1(selectedTime, selectedParameter)
-        );
-        setChartDataCompost2(
-          generateCompostData2(selectedTime, selectedParameter)
-        );
-      }
+    };
+
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (deviceData) {
+      setDeviceNumber(deviceData.deviceNumber);
+      setRealTimeData(deviceData.realTimeData);
+      setSavedTimeFrameData(deviceData.savedTimeFrameData);
+      const allData = filterAndFormatAllData(deviceData.savedTimeFrameData);
+      setAllSavedData(allData);
+      setDataProcessed(true); // Data processing complete
     }
-  }, [
-    selectedTime,
-    selectedParameter,
-    isDeviceCompostSelected,
-    isDeviceEnergySelected,
-  ]);
+  }, [deviceData, filterAndFormatAllData]);
+
+  useEffect(() => {
+    if (savedTimeFrameData && dataProcessed) {
+      const allData = filterAndFormatAllData(savedTimeFrameData);
+      setAllSavedData(allData);
+    }
+  }, [savedTimeFrameData, dataProcessed, filterAndFormatAllData]);
+
+  const handleTimeClick = (time: string) => {
+    setSelectedTime(time); // This is crucial: Set the state FIRST
+
+    setIsLoading(true);
+
+    switch (time) {
+      case "Day":
+        setDownsampleInterval(10);  //10mins
+        break;
+      case "Week":
+        setDownsampleInterval(180); //3hrs
+        break;
+      case "Month":
+        setDownsampleInterval(240); //4hrs
+        break;
+      default:
+        setDownsampleInterval(10);
+    }
+
+    setTimeout(() => {
+      setIsLoading(false);
+    }, 300);
+  };
+
+  const formatChartData = useCallback(
+    (data: any[], dataType: string, selectedTime: string) => {
+        if (!data || data.length === 0) return [];
+
+        let startDate: Date;
+        let endDate: Date;
+
+        switch (selectedTime) {
+            case "Day":
+                startDate = startOfDay(new Date());
+                endDate = endOfDay(new Date());
+                break;
+            case "Week":
+                startDate = startOfWeek(new Date());
+                endDate = endOfWeek(new Date());
+                break;
+            case "Month":
+                startDate = startOfMonth(new Date());
+                endDate = endOfMonth(new Date());
+                break;
+            default:
+                startDate = startOfDay(new Date());
+                endDate = endOfDay(new Date());
+        }
+
+        const filteredData = data.filter((item) => {
+            const itemDate = parseISO(item.timestamp);
+            return itemDate >= startDate && itemDate <= endDate;
+        });
+
+        let lastDay: Date | null = null; // Track the last day processed for separators
+
+        return filteredData.map((item: any, index: number) => {
+            const itemDate = parseISO(item.timestamp);
+            let labelFormat = "HH:mm";
+            let label = format(itemDate, labelFormat);
+            if (selectedTime === "Week" || selectedTime === "Month") {
+                if (!lastDay || !isSameDay(itemDate, lastDay)) {
+                    label = `${format(itemDate, 'dd/MM')} \n ${format(itemDate, 'HH:mm')}`; // Add day separator
+                    lastDay = itemDate; // Update lastDay
+                } else {
+                    label = format(itemDate, labelFormat); // Just time if same day
+                }
+            }
+
+
+            return {
+                label,
+                value: item[dataType],
+                timeStamp: itemDate,
+                dataType: dataType,
+            };
+        });
+    },
+    []
+);
+
+
+  const chartDataSolarMemo = useMemo(() => {
+    return formatChartData(allSavedData.solar, selectedParameter!, selectedTime!);
+  }, [allSavedData.solar, selectedParameter, selectedTime, formatChartData]);
+
+  const chartDataTegMemo = useMemo(() => {
+    return formatChartData(allSavedData.teg, selectedParameter!, selectedTime!);
+  }, [allSavedData.teg, selectedParameter, selectedTime, formatChartData]);
+
+  const chartDataCompost1Memo = useMemo(() => {
+    return formatChartData(allSavedData.compostOne, selectedParameter!, selectedTime!);
+  }, [allSavedData.compostOne, selectedParameter, selectedTime, formatChartData]);
+
+  const chartDataCompost2Memo = useMemo(() => {
+    return formatChartData(allSavedData.compostTwo, selectedParameter!, selectedTime!);
+  }, [allSavedData.compostTwo, selectedParameter, selectedTime, formatChartData]);
+
+  const lengthChecker = useMemo(() => {
+    return (
+        chartDataSolarMemo.length > 0 ||
+        chartDataTegMemo.length > 0 ||
+        (chartDataCompost1Memo.length > 0 && chartDataCompost2Memo.length > 0)
+    );
+  }, [chartDataSolarMemo, chartDataTegMemo, chartDataCompost1Memo, chartDataCompost2Memo]);
+
+  const handleDeviceEnergyClick = () => {
+    if (isDeviceCompostSelected) {
+        setDeviceCompostSelected(false);
+        setSelectedTime("Day");
+    }
+    setDeviceEnergySelected(!isDeviceEnergySelected);
+    setSelectedParameter("voltage");
+  };
+
+  const handleDeviceCompostClick = () => {
+      if (isDeviceEnergySelected) {
+          setDeviceEnergySelected(false);
+          setSelectedTime("Day");
+      }
+      setDeviceCompostSelected(!isDeviceCompostSelected);
+      setSelectedParameter("methane");
+  };
+
+  const handleParameterChange = (parameter: string) => {
+      setSelectedParameter(parameter);
+      setIsLoading(true);
+      setTimeout(() => {
+          setIsLoading(false);
+      }, 300);
+  };
 
   const selectReading = (title: string) => {
-    setSelectedReading(title);
+      setSelectedReading(title);
   };
 
   return (
-    <View className="flex-1">
+    <ScrollView className="flex-1">
       <HeaderSection
         headerText="Device"
         title="User"
@@ -233,14 +326,14 @@ const Device = () => {
           <View className="w-[92.5%] py-3 flex-row border-b-2 flex justify-between items-center mt-4">
             <View className="flex flex-row gap-4">
               <MaterialIcons name="devices" size={24} color="black" />
-              <Text>#97ABJ873223</Text>
+              <Text>{deviceNumber}</Text>
             </View>
             <CustomButton onPress={() => console.log("HELP")} title="HELP" />
           </View>
 
           {/* Device Data Buttons */}
           <View>
-            <View className="w-[72.5%] py-3 flex-row flex justify-between items-center mt-4 gap-2">
+            <View className="w-[72.5%] py-2 flex-row flex justify-between items-center mt-2 gap-2">
               <CustomButton
                 onPress={handleDeviceEnergyClick}
                 title="Energy Data"
@@ -264,7 +357,7 @@ const Device = () => {
             </View>
 
             {/* Time Period Buttons */}
-            <View className="w-[72.5%] py-2 flex-row flex justify-between items-center">
+            <View className="w-[72.5%] pb-3 flex-row flex justify-between items-center">
               {["Day", "Week", "Month"].map((time) => (
                 <CustomButton
                   key={time}
@@ -290,192 +383,97 @@ const Device = () => {
           {/* Line Chart with Parameter Selection for Energy and Compost*/}
           <View className="w-full flex-col">
             {!isDeviceCompostSelected && !isDeviceEnergySelected && (
-              <View className="w-full h-[350px] justify-center items-center">
+              <View className="w-full h-[350px] justify-center items-center ">
                 <Text className="font-semibold">Select A Parameter</Text>
               </View>
             )}
 
-            {(isDeviceCompostSelected || isDeviceEnergySelected) && (
-              <View className="py-8 ">
-                {selectedTime && lengthChecker && !isLoading && (
-                  <View>
-                    <View className=""
-                    >
-                      <LineChart
-                        data={isDeviceEnergySelected && !isDeviceCompostSelected ? chartDataSolar : chartDataCompost1}
-                        data2={isDeviceEnergySelected && !isDeviceCompostSelected ? chartDataTeg : chartDataCompost2}
-                        color="#07BAD1"
-                        color2="orange"
-                        noOfSections={5}
-                        height={300}
-                        thickness={2}
-                        initialSpacing={0}
-                        backgroundColor="transparent"
-                        rulesType="solid"
-                        rulesColor="gray"
-                        isAnimated
-                        animateOnDataChange
-                        animationDuration={1000}
-                        onDataChangeAnimationDuration={300}
-                        areaChart
-                        curved
-                        rotateLabel
-                        maxValue={getMaxValue(selectedParameter)}
-                        xAxisLabelsHeight={50}
-                        xAxisThickness={0}
-                        xAxisLabelTextStyle={{color: "black", fontSize: 8,fontWeight: "bold",}}
-                        yAxisLabelSuffix={getYAxisLabelSuffix(selectedParameter)}
-                        yAxisTextStyle={{ color: "black", fontSize: 8 }}
-                        yAxisThickness={0}
-                        hideDataPoints
-                        dataPointsColor1="blue"
-                        dataPointsColor2="red"
-                        startFillColor1="#8a56ce"
-                        startFillColor2="#56acce"
-                        endFillColor1="#8a56ce"
-                        endFillColor2="#56acce"
-                        startOpacity={0.8}
-                        endOpacity={0.3}
-                        focusEnabled
-                        showTextOnFocus
-                        pointerConfig={{
-                          persistPointer: true,
-                          activatePointersOnLongPress: true,
-                          pointerStripUptoDataPoint: true,
-                          pointerStripColor: "gray",
-                          pointerStripWidth: 2,
-                          strokeDashArray: [4, 5],
-                          pointerColor: "black",
-                          radius: 4,
-                          pointerLabelWidth: 100,
-                          pointerLabelHeight: 120,
-                          
-                          autoAdjustPointerLabelPosition: false,
-                          pointerLabelComponent: (items: any) => {
-                            return (
-                              <View
-                                style={{
-                                  height: 90,
-                                  width: 100,
-                                  justifyContent: 'center',
-                                  marginTop: -30,
-                                  marginLeft: -40,
-                                }}>
-                                <Text style={{color: 'white', fontSize: 14, marginBottom:6,textAlign:'center'}}>
-                                  {items[0].date}
-                                </Text>
-                
-                                <View style={{paddingHorizontal:14,paddingVertical:6, borderRadius:16, backgroundColor:'white'}}>
-                                  <Text style={{fontWeight: 'bold',textAlign:'center'}}>
-                                    {'$' + items[0].value + '.0'}
-                                  </Text>
-                                </View>
-                              </View>
-                            );
-                          },
-                        }}
-                      />
-                    </View>
-                    {/* Parameter Selection for Energy and Compost */}
-                    {(isDeviceEnergySelected || isDeviceCompostSelected) && (
-                      <View className="w-full justify-center items-center">
-                        <View className="w-[72.5%] py-3 flex-row flex justify-between items-center">
-                          {(isDeviceEnergySelected
-                            ? ["voltage", "current", "wattage"]
-                            : ["methane", "moisture", "temp"]
-                          ).map((param) => (
-                            <CustomButton
-                              key={param}
-                              onPress={() => handleParameterChange(param)}
-                              title={
-                                param.charAt(0).toUpperCase() + param.slice(1)
-                              }
-                              textStyles="text-[8px] font-bold"
-                              containerStyles={`w-1/4 p-2 align-center border-[0.5px] ${
-                                selectedParameter === param
-                                  ? "border-green-600 bg-green-100"
-                                  : "border-gray-400"
-                              }`}
-                            />
-                          ))}
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                )}
+            {!dataProcessed && (
+              <View className="w-full flex-col ">
+                <View className="w-full h-[475px] min-h-[475px] rounded-md justify-center items-center">
+                  <Text>Processing...</Text>
+                  <ActivityIndicator color={"#DE0F3F"} size={"small"} />
+                </View>
               </View>
             )}
-          </View>
-          {isLoading && (
-            <View className="w-full p-5 flex-col">
-              <View className="w-full h-[330px] rounded-md justify-center items-center">
-                <ActivityIndicator color={"#DE0F3F"} size={"small"} />
+
+            {isLoading && (
+              <View className="w-full flex-col ">
+                <View className="w-full h-[475px] min-h-[475px] rounded-md justify-center items-center">
+                  <ActivityIndicator color={"#DE0F3F"} size={"small"} />
+                </View>
               </View>
-            </View>
-          )}
+            )}
+
+            {/* For The LineGraph */}
+            {(isDeviceCompostSelected || isDeviceEnergySelected) &&
+              dataProcessed && (
+                <LineGraphDataVisual 
+                selectedTime={selectedTime}
+                lengthChecker={lengthChecker}
+                isLoading={isLoading}
+                isDeviceCompostSelected={isDeviceCompostSelected}
+                isDeviceEnergySelected={isDeviceEnergySelected}
+                chartDataSolar={chartDataSolarMemo} // Using memoized value
+                chartDataTeg={chartDataTegMemo} // Using memoized value
+                chartDataCompost1={chartDataCompost1Memo} // Using memoized value
+                chartDataCompost2={chartDataCompost2Memo} // Using memoized value
+                selectedParameter={selectedParameter}
+                getMaxValue={getMaxValue}
+                getYAxisLabelSuffix={getYAxisLabelSuffix}
+                handleParameterChange={handleParameterChange}
+                />
+              )}
+          </View>
+
           {/* Reading for Power*/}
           <View className="w-full justify-center items-center">
             <View className="w-[92.5%] flex-row  justify-between items-center">
               <View className="flex-1 flex-row justify-between items-center">
                 <CustomButton
                   onPress={(title) => {
-                    if (title) {
-                      selectReading(title);
-                    } else {
-                      return;
-                    }
+                    if (!title) return;
+                    selectReading(title);
                   }}
                   title="Solar"
                   textStyles="text-[8px] font-bold"
-                  containerStyles={`flex-1 p-2 align-center border-x-2 rounded-none`}
+                  containerStyles={`flex-1 py-4 align-center border-x-2 rounded-none`}
                 />
                 <CustomButton
                   onPress={(title) => {
-                    if (title) {
-                      selectReading(title);
-                    } else {
-                      return;
-                    }
+                    if (!title) return;
+                    selectReading(title);
                   }}
                   title="TEG"
                   textStyles="text-[8px] font-bold"
-                  containerStyles={`flex-1 p-2 align-center border-r-2 rounded-none`}
+                  containerStyles={`flex-1 py-4 align-center border-r-2 rounded-none`}
                 />
                 <CustomButton
-                onPress={(title) => {
-                  if (title) {
+                  onPress={(title) => {
+                    if (!title) return;
                     selectReading(title);
-                  } else {
-                    return;
-                  }
-                }}
-                title="Battery Status"
-                textStyles="text-[8px] font-bold"
-                containerStyles={` p-2 align-center border-r-2 rounded-none`}
-              />
+                  }}
+                  title="Battery"
+                  textStyles="text-[8px] font-bold"
+                  containerStyles={`flex-1 py-4 align-center border-r-2 rounded-none`}
+                />
                 <CustomButton
                   onPress={(title) => {
-                    if (title) {
-                      selectReading(title);
-                    } else {
-                      return;
-                    }
+                    if (!title) return;
+                    selectReading(title);
                   }}
                   title="Compost1"
                   textStyles="text-[8px] font-bold"
-                  containerStyles={`flex-1 p-2 align-center border-r-2 rounded-none`}
+                  containerStyles={`flex-1 py-4 align-center border-r-2 rounded-none`}
                 />
                 <CustomButton
                   onPress={(title) => {
-                    if (title) {
-                      selectReading(title);
-                    } else {
-                      return;
-                    }
+                    if (!title) return;
+                    selectReading(title);
                   }}
                   title="Compost2"
                   textStyles="text-[8px] font-bold"
-                  containerStyles={`flex-1 p-2 align-center border-r-2 rounded-none`}
+                  containerStyles={`flex-1 py-4 align-center border-r-2 rounded-none`}
                 />
               </View>
             </View>
@@ -483,17 +481,20 @@ const Device = () => {
             <View className="w-[92.5%] flex-col mt-2 border-2 rounded-md">
               <View className="flex-1 flex-row border-b-2  p-4">
                 <MaterialIcons name="devices" size={24} color="black" />
-                <Text className="text-center font-bold"> Total Generated:</Text>
-                <View className="flex-row gap-2">
+                <Text className="text-center font-bold"> Device Reading / 10min: </Text>
+                {/* <View className="flex-row gap-2">
                   <Text> 20W</Text>
-                </View>
+                </View> */}
               </View>
-              {generateReading(selectedReading)}
+              <RealTimeReading
+                selectedReading={selectedReading}
+                realTimeData={realTimeData}
+              />
             </View>
           </View>
         </View>
       </ScrollView>
-    </View>
+    </ScrollView>
   );
 };
 
