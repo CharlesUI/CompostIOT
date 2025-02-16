@@ -1,5 +1,4 @@
 import React from "react";
-import { Slot } from "expo-router";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -15,6 +14,7 @@ const RootLayout = () => {
           options={{ headerShown: false, presentation: "modal" }}
         />
         <Stack.Screen name="+not-found" />
+        <Stack.Screen name="scanner/index" options={{ headerShown: false }} />
       </Stack>
     </SafeAreaProvider>
   );

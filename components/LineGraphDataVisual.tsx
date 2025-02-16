@@ -1,8 +1,8 @@
-import { View, Text } from "react-native";
+import { View, Text, Animated, ActivityIndicator } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import React from "react";
 import CustomButton from "./CustomButton";
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import {
   format,
   startOfDay,
@@ -101,6 +101,21 @@ const LineGraphDataVisual = ({
     return baseMax; // Increase max value by 20% for top spacing
   }, [selectedParameter, getMaxValue]);
 
+  // Animation setup
+  const fadeAnim = useRef(new Animated.Value(0)).current; // Initial opacity 0
+
+  useEffect(() => {
+    if (lengthChecker && !isLoading) {
+      Animated.timing(fadeAnim, {
+        toValue: 1, // Fade in to full opacity
+        duration: 500, // Animation duration (milliseconds) - adjust as needed
+        useNativeDriver: true, // For better performance
+      }).start();
+    } else {
+      fadeAnim.setValue(0); // Optionally reset opacity if chart hides
+    }
+  }, [lengthChecker, isLoading, fadeAnim]);
+
   return (
     <View className="flex-1 ">
       <View className="pb-4 flex-1">
@@ -109,154 +124,165 @@ const LineGraphDataVisual = ({
             <Text className="text-center font-bold text-md m-4">
               {chartDateLabel}
             </Text>
-            <View className="h-[360px] min-h-[360px] ">
-              <LineChart
-                data={
-                  isDeviceEnergySelected && !isDeviceCompostSelected
-                    ? chartDataSolar
-                    : chartDataCompost1
-                }
-                data2={
-                  isDeviceEnergySelected && !isDeviceCompostSelected
-                    ? chartDataTeg
-                    : chartDataCompost2
-                }
-                color="#07BAD1"
-                color2="orange"
-                noOfSections={5}
-                height={310}
-                showVerticalLines
-                thickness={2}
-                initialSpacing={0}
-                spacing={75}
-                backgroundColor="transparent"
-                rulesType="solid"
-                rulesColor="gray"
-                isAnimated
-                animateOnDataChange
-                animationDuration={1000}
-                onDataChangeAnimationDuration={3000}
-                areaChart
-                curved
-                // rotateLabel
-                maxValue={adjustedMaxValue}
-                xAxisLabelsHeight={40} // Use dynamic height
-                xAxisTextNumberOfLines={2}
-                scrollEventThrottle={16}
-                yAxisLabelWidth={30}
-                xAxisThickness={0}
-                xAxisLabelTextStyle={{
-                  marginLeft: 25,
-                  fontSize: 8,
-                  fontWeight: "bold",
-                  textAlign: "center",
-                  marginTop: 5, // Center text within the label's width
-                }}
-                roundToDigits={0}
-                yAxisLabelSuffix={
-                  selectedParameter && getYAxisLabelSuffix(selectedParameter)
-                }
-                yAxisTextStyle={{ fontSize: 8, fontWeight: "bold" }}
-                yAxisThickness={0}
-                hideDataPoints
-                dataPointsColor1="blue"
-                dataPointsColor2="red"
-                startFillColor1="#8a56ce"
-                startFillColor2="#56acce"
-                endFillColor1="#8a56ce"
-                endFillColor2="#56acce"
-                startOpacity={0.8}
-                endOpacity={0.3}
-                focusEnabled
-                showTextOnFocus
-                pointerConfig={{
-                  // persistPointer: true,
-                  activatePointersOnLongPress: true,
-                  pointerStripUptoDataPoint: true,
-                  pointerStripColor: "gray",
-                  pointerStripWidth: 2,
-                  strokeDashArray: [4, 5],
-                  pointerColor: "black",
-                  radius: 4,
-                  pointerLabelWidth: 90,
-                  pointerLabelHeight: 1000,
-                  autoAdjustPointerLabelPosition: false,
-
-                  pointerLabelComponent: (items: any) => {
-                    return (
-                      <View
-                        style={{
-                          height: 90,
-                          width: 120,
-                          justifyContent: "center",
-                          marginTop: -55,
-                          marginLeft: -40,
-                          alignItems: "center",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: "black",
-                            fontWeight: "bold",
-                            fontSize: 12,
-                            marginBottom: 3,
-                            textAlign: "center",
-                          }}
-                        >
-                          {format(items[0]?.timeStamp, "dd/MM HH:mm")}
-                        </Text>
-
-                        <View
-                          style={{
-                            paddingHorizontal: 12,
-                            paddingVertical: 5,
-                            borderRadius: 12,
-                            backgroundColor: "white",
-                            marginBottom: 2,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontWeight: "bold",
-                              textAlign: "center",
-                              fontSize: 10,
-                              color: "#07BAD1",
-                            }}
-                          >
-                            {readingTypeLabels.data1Label}:{" "}
-                            {items[0]?.value?.toFixed(2)}{" "}
-                            {getYAxisLabelSuffix(selectedParameter!)}
-                          </Text>
-                        </View>
-                        {items[1] && (
+            <View className="h-[360px] min-h-[360px] overflow-hidden">
+              {/* overflow-hidden to clip during fade */}
+              <Animated.View style={{ opacity: fadeAnim }}>
+                {/* Animated.View for fade */}
+                {!isLoading && lengthChecker ? ( // Conditionally render LineChart when data is ready and not loading
+                  <LineChart
+                    data={
+                      isDeviceEnergySelected && !isDeviceCompostSelected
+                        ? chartDataSolar
+                        : chartDataCompost1
+                    }
+                    data2={
+                      isDeviceEnergySelected && !isDeviceCompostSelected
+                        ? chartDataTeg
+                        : chartDataCompost2
+                    }
+                    color="#07BAD1"
+                    color2="orange"
+                    noOfSections={5}
+                    height={310}
+                    showVerticalLines
+                    thickness={2}
+                    initialSpacing={0}
+                    spacing={75}
+                    backgroundColor="transparent"
+                    rulesType="solid"
+                    rulesColor="gray"
+                    isAnimated
+                    animateOnDataChange
+                    animationDuration={1000}
+                    onDataChangeAnimationDuration={3000}
+                    areaChart
+                    curved
+                    maxValue={adjustedMaxValue}
+                    xAxisLabelsHeight={40}
+                    xAxisTextNumberOfLines={2}
+                    scrollEventThrottle={16}
+                    yAxisLabelWidth={30}
+                    xAxisThickness={0}
+                    xAxisLabelTextStyle={{
+                      marginLeft: 25,
+                      fontSize: 8,
+                      fontWeight: "bold",
+                      textAlign: "center",
+                      marginTop: 5,
+                    }}
+                    roundToDigits={0}
+                    yAxisLabelSuffix={
+                      selectedParameter &&
+                      getYAxisLabelSuffix(selectedParameter)
+                    }
+                    yAxisTextStyle={{ fontSize: 8, fontWeight: "bold" }}
+                    yAxisThickness={0}
+                    hideDataPoints
+                    dataPointsColor1="blue"
+                    dataPointsColor2="red"
+                    startFillColor1="#8a56ce"
+                    startFillColor2="#56acce"
+                    endFillColor1="#8a56ce"
+                    endFillColor2="#56acce"
+                    startOpacity={0.8}
+                    endOpacity={0.3}
+                    focusEnabled
+                    showTextOnFocus
+                    pointerConfig={{
+                      activatePointersOnLongPress: true,
+                      pointerStripUptoDataPoint: true,
+                      pointerStripColor: "gray",
+                      pointerStripWidth: 2,
+                      strokeDashArray: [4, 5],
+                      pointerColor: "black",
+                      radius: 4,
+                      pointerLabelWidth: 90,
+                      pointerLabelHeight: 1000,
+                      autoAdjustPointerLabelPosition: false,
+                      pointerLabelComponent: (items: any) => {
+                        return (
                           <View
                             style={{
-                              paddingHorizontal: 12,
-                              paddingVertical: 5,
-                              borderRadius: 12,
-                              backgroundColor: "white",
+                              height: 90,
+                              width: 120,
+                              justifyContent: "center",
+                              marginTop: -55,
+                              marginLeft: -40,
+                              alignItems: "center",
                             }}
                           >
                             <Text
                               style={{
+                                color: "black",
                                 fontWeight: "bold",
+                                fontSize: 12,
+                                marginBottom: 3,
                                 textAlign: "center",
-                                fontSize: 10,
-                                color: "orange",
                               }}
                             >
-                              {readingTypeLabels.data2Label}:{" "}
-                              {items[1]?.value?.toFixed(2)}{" "}
-                              {getYAxisLabelSuffix(selectedParameter!)}
+                              {format(items[0]?.timeStamp, "dd/MM HH:mm")}
                             </Text>
+
+                            <View
+                              style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 5,
+                                borderRadius: 12,
+                                backgroundColor: "white",
+                                marginBottom: 2,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontWeight: "bold",
+                                  textAlign: "center",
+                                  fontSize: 10,
+                                  color: "#07BAD1",
+                                }}
+                              >
+                                {readingTypeLabels.data1Label}:{" "}
+                                {items[0]?.value?.toFixed(2)}{" "}
+                                {getYAxisLabelSuffix(selectedParameter!)}
+                              </Text>
+                            </View>
+                            {items[1] && (
+                              <View
+                                style={{
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 5,
+                                  borderRadius: 12,
+                                  backgroundColor: "white",
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontWeight: "bold",
+                                    textAlign: "center",
+                                    fontSize: 10,
+                                    color: "orange",
+                                  }}
+                                >
+                                  {readingTypeLabels.data2Label}:{" "}
+                                  {items[1]?.value?.toFixed(2)}{" "}
+                                  {getYAxisLabelSuffix(selectedParameter!)}
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                        )}
-                      </View>
-                    );
-                  },
-                }}
-              />
+                        );
+                      },
+                    }}
+                  />
+                ) : (
+                  isLoading && (
+                    <View className="w-full h-[360px] min-h-[360px] rounded-md justify-center items-center">
+                      <ActivityIndicator color={"#DE0F3F"} size={"small"} />
+                    </View>
+                  )
+                )}
+              </Animated.View>
             </View>
+
             {/* Parameter Selection for Energy and Compost */}
             {(isDeviceEnergySelected || isDeviceCompostSelected) && (
               <View className="w-full justify-center items-center ">

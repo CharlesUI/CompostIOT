@@ -1,6 +1,6 @@
 {
     "_id": "device_001",
-    "deviceNumber": "SN-12345678",
+    "deviceNumber": "THIS_IS_GROUP_4",
     "realTimeData": {
         "batteryStatus": 84,
         "solar": {
